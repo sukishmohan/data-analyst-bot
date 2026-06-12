@@ -15,11 +15,6 @@ import requests
 from pathlib import Path
 from typing import Any, Optional
 
-try:
-    import streamlit as st
-except ImportError:
-    st = None
-
 
 # ──────────────────────────────────────────────
 # 1. Configuration
@@ -29,11 +24,6 @@ _PROJECT_ROOT = Path(__file__).resolve().parent
 
 # User-provided NVIDIA API key
 def get_api_key():
-    try:
-        if st and hasattr(st, "secrets"):
-            return st.secrets.get("NVIDIA_API_KEY", "")
-    except Exception:
-        pass
     return os.getenv("NVIDIA_API_KEY", "")
 
 NVIDIA_API_KEY = get_api_key()

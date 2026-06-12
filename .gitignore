@@ -2,5 +2,6 @@ __pycache__/
 *.pyc
 outputs/
 .env
-.streamlit/secrets.toml
-
+.streamlit/
+frontend/node_modules/
+frontend/dist/

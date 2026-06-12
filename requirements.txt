@@ -1,4 +1,4 @@
-# AI Data Analyst Agent (Local Ollama Edition) - Dependencies
+# AI Data Analyst Agent - Dependencies
 # Core
 pandas>=2.0.0
 numpy>=1.24.0
@@ -6,8 +6,9 @@ numpy>=1.24.0
 # Visualization
 matplotlib>=3.7.0
 
-# UI Dashboard
-streamlit>=1.28.0
+# API Server
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
 
 # Report Generation
 fpdf2>=2.7.0
