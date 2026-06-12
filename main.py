@@ -39,23 +39,33 @@ MAX_REFLECTION_RETRIES = 1
 # 1. Initialisation
 # ──────────────────────────────────────────────
 
-def initialise(csv_path: str | Path = None) -> tuple[pd.DataFrame, dict]:
-    """Load and prepare the dataset. Caches globally."""
-    global _df, _profile
+_loaded_csv_path: Optional[Path] = None
 
-    if _df is not None and _profile is not None:
+def initialise(csv_path: str | Path = None, force_reload: bool = False) -> tuple[pd.DataFrame, dict]:
+    """Load and prepare the dataset. Caches globally."""
+    global _df, _profile, _loaded_csv_path
+
+    if not force_reload and _df is not None and _profile is not None:
         return _df, _profile
 
     if csv_path is None:
-        project = Path(__file__).resolve().parent
-        candidates = list(project.glob("*.csv"))
-        if not candidates:
-            raise FileNotFoundError("No CSV file found in project directory.")
-        csv_path = candidates[0]
-        log.info("Auto-detected dataset: %s", csv_path.name)
+        raise FileNotFoundError("No dataset loaded. Upload a CSV first.")
 
     _df, _profile = load_and_prepare(csv_path)
+    _loaded_csv_path = Path(csv_path)
     return _df, _profile
+
+
+def is_initialised() -> bool:
+    return _df is not None and _profile is not None
+
+
+def get_dataset_name() -> str:
+    """Return the filename of the currently loaded dataset."""
+    global _loaded_csv_path
+    if _loaded_csv_path:
+        return _loaded_csv_path.name
+    return "No dataset loaded"
 
 
 # ──────────────────────────────────────────────

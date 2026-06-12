@@ -9,6 +9,7 @@ matplotlib>=3.7.0
 # API Server
 fastapi>=0.110.0
 uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
 
 # Report Generation
 fpdf2>=2.7.0

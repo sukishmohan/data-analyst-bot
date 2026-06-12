@@ -2,19 +2,19 @@
 server.py — FastAPI backend for AI Data Analyst Agent
 """
 
-import json
+import shutil
 import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from utils import get_logger, check_llm_available, CHARTS_DIR
-from data_loader import load_and_prepare
-from main import run_analysis, initialise
+from utils import get_logger, check_llm_available
+from main import run_analysis, initialise, get_dataset_name, is_initialised
+from report_exporter import export_pdf_report
 
 log = get_logger("server")
 
@@ -28,7 +28,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Store analysis results by ID for chart serving
+UPLOAD_DIR = Path(__file__).resolve().parent / "uploads"
+UPLOAD_DIR.mkdir(exist_ok=True)
+
 _results: dict[str, dict] = {}
 
 
@@ -60,12 +62,8 @@ class AnalyzeResponse(BaseModel):
 @app.on_event("startup")
 def startup():
     if not check_llm_available():
-        log.warning("NVIDIA_API_KEY is not set. Set it as an environment variable.")
-    try:
-        initialise()
-        log.info("Dataset loaded successfully on startup.")
-    except Exception as e:
-        log.warning("Could not auto-load dataset on startup: %s", e)
+        log.warning("NVIDIA_API_KEY is not set.")
+    log.info("Ready. Upload a CSV to begin.")
 
 
 # ──────────────────────────────────────────────
@@ -74,17 +72,23 @@ def startup():
 
 @app.get("/api/health")
 def health():
+    loaded = is_initialised()
     return {
         "status": "ok",
         "llm_configured": check_llm_available(),
+        "dataset_loaded": loaded,
+        "dataset_name": get_dataset_name() if loaded else None,
     }
 
 
 @app.get("/api/profile")
 def get_profile():
+    if not is_initialised():
+        raise HTTPException(status_code=404, detail="No dataset loaded. Upload a CSV first.")
     try:
         _, profile = initialise()
         return {
+            "dataset_name": get_dataset_name(),
             "shape": profile["shape"],
             "columns": [
                 {
@@ -106,16 +110,45 @@ def get_profile():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/upload")
+def upload_csv(file: UploadFile = File(...)):
+    if not file.filename or not file.filename.endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only CSV files are accepted.")
+
+    filepath = UPLOAD_DIR / f"uploaded_{uuid.uuid4().hex[:8]}_{file.filename}"
+
+    try:
+        with filepath.open("wb") as f:
+            shutil.copyfileobj(file.file, f)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save file: {e}")
+
+    try:
+        df, profile = initialise(filepath, force_reload=True)
+    except Exception as e:
+        filepath.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail=f"Failed to load CSV: {e}")
+
+    _results.clear()
+    log.info("Dataset loaded: %s (%s rows)", file.filename, len(df))
+    return {
+        "status": "ok",
+        "dataset_name": file.filename,
+        "rows": len(df),
+        "columns": len(df.columns),
+    }
+
+
 @app.post("/api/analyze", response_model=AnalyzeResponse)
 def analyze(req: AnalyzeRequest):
     if not req.query.strip():
         raise HTTPException(status_code=400, detail="Query cannot be empty.")
 
     if not check_llm_available():
-        raise HTTPException(
-            status_code=503,
-            detail="NVIDIA_API_KEY is not configured. Set it as an environment variable.",
-        )
+        raise HTTPException(status_code=503, detail="NVIDIA_API_KEY is not configured.")
+
+    if not is_initialised():
+        raise HTTPException(status_code=400, detail="No dataset loaded. Upload a CSV first.")
 
     try:
         result = run_analysis(req.query)
@@ -141,6 +174,32 @@ def analyze(req: AnalyzeRequest):
         code=result.get("code", ""),
         confidence=reflection.get("confidence", 0.0),
         error=result.get("error"),
+    )
+
+
+@app.get("/api/report/{analysis_id}")
+def download_report(analysis_id: str):
+    result = _results.get(analysis_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Analysis not found.")
+
+    query = result.get("query", "")
+    plan = result.get("plan", {})
+    title = plan.get("title", "Analysis")
+    steps = plan.get("steps", [])
+    result_text = result.get("result_text", "")
+    insights = result.get("insights", "")
+    chart_path = result.get("chart_path")
+
+    try:
+        pdf_path = export_pdf_report(query, title, steps, result_text, insights, chart_path)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {e}")
+
+    return FileResponse(
+        str(pdf_path),
+        media_type="application/pdf",
+        filename=f"{title.replace(' ', '_')}_report.pdf",
     )
 
 
