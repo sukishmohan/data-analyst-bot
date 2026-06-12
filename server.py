@@ -218,13 +218,63 @@ def serve_chart(analysis_id: str):
 
 @app.get("/api/sample-queries")
 def sample_queries():
-    return [
-        "Show monthly sales trend",
-        "Which category has highest profit?",
-        "Find loss-making sub-categories",
-        "Compare regions by revenue",
-        "Forecast sales for next 6 months",
-        "Top 10 customers by sales",
-        "Profit margin by category",
-        "Quarterly sales growth rate",
-    ]
+    if not is_initialised():
+        return []
+
+    _, profile = initialise()
+    all_num = profile.get("numeric_columns", [])
+    all_cat = profile.get("categorical_columns", [])
+    date_cols = profile.get("date_columns", [])
+    queries = []
+
+    _id_keywords = ["id", "code", "key", "row", "index", "postal", "zip"]
+
+    def _is_id(col):
+        c = col.lower()
+        return any(k in c for k in _id_keywords)
+
+    num_cols = [c for c in all_num if not _is_id(c)]
+    cat_cols = [c for c in all_cat if not _is_id(c)]
+
+    if not num_cols:
+        num_cols = all_num[:1]
+    if not cat_cols:
+        cat_cols = all_cat[:2]
+
+    top_num = num_cols[:3]
+    top_cat = cat_cols[:3]
+
+    if not top_num:
+        return []
+
+    n = top_num[0]
+
+    if date_cols and num_cols:
+        queries.append(f"Show monthly {n} trend")
+        if len(num_cols) > 1:
+            queries.append(f"Compare {num_cols[0]} and {num_cols[1]} over time")
+
+    if cat_cols and num_cols:
+        c = top_cat[0]
+        queries.append(f"Which {c} has highest {n}?")
+        queries.append(f"Top 5 {c} by {n}")
+        queries.append(f"Show {n} breakdown by {c}")
+        if len(cat_cols) > 1:
+            queries.append(f"Compare {cat_cols[0]} and {cat_cols[1]} by {n}")
+        if len(num_cols) > 1:
+            queries.append(f"Profit margin of {n} by {c}")
+
+    if num_cols:
+        queries.append(f"Show distribution of {n}")
+        queries.append(f"Summary statistics of numeric columns")
+
+    if len(num_cols) >= 2:
+        queries.append(f"Correlation between {num_cols[0]} and {num_cols[1]}")
+
+    if date_cols and num_cols:
+        queries.append(f"Forecast {n} for next 6 months")
+
+    if cat_cols:
+        queries.append(f"Find top performing {top_cat[0]}")
+
+    return queries[:12]
