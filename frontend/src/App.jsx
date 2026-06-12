@@ -261,7 +261,7 @@ function App() {
                 </div>
               </form>
 
-              {sampleQueries.length > 0 && !result && (
+              {datasetLoaded && sampleQueries.length > 0 && !result && (
                 <div className="samples-row">
                   {sampleQueries.map(q => (
                     <button key={q} className="sample-btn" onClick={() => handleSampleClick(q)} disabled={loading}>
